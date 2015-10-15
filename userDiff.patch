@@ -1,0 +1,126 @@
+13a14
+> #include <linux/bitops.h>
+22,23c23,24
+< #define __uidhashfn(uid)	(((uid >> UIDHASH_BITS) ^ uid) & UIDHASH_MASK)
+< #define uidhashentry(uid)	(uidhash_table + __uidhashfn(uid))
+---
+> #define __uidhashfn(uid)	(((uid >> UIDHASH_BITS) + uid) & UIDHASH_MASK)
+> #define uidhashentry(uid)	(uidhash_table + __uidhashfn((uid)))
+26c27
+< static struct user_struct *uidhash_table[UIDHASH_SZ];
+---
+> static struct list_head uidhash_table[UIDHASH_SZ];
+30,32c31,33
+< 	__count:	ATOMIC_INIT(1),
+< 	processes:	ATOMIC_INIT(1),
+< 	files:		ATOMIC_INIT(0)
+---
+> 	.__count	= ATOMIC_INIT(1),
+> 	.processes	= ATOMIC_INIT(1),
+> 	.files		= ATOMIC_INIT(0)
+38c39
+< static inline void uid_hash_insert(struct user_struct *up, struct user_struct **hashent)
+---
+> static inline void uid_hash_insert(struct user_struct *up, struct list_head *hashent)
+40,46c41
+< 	struct user_struct *next = *hashent;
+< 
+< 	up->next = next;
+< 	if (next)
+< 		next->pprev = &up->next;
+< 	up->pprev = hashent;
+< 	*hashent = up;
+---
+> 	list_add(&up->uidhash_list, hashent);
+51,52c46,51
+< 	struct user_struct *next = up->next;
+< 	struct user_struct **pprev = up->pprev;
+---
+> 	list_del(&up->uidhash_list);
+> }
+> 
+> static inline struct user_struct *uid_hash_find(uid_t uid, struct list_head *hashent)
+> {
+> 	struct list_head *up;
+54,70c53,60
+< 	if (next)
+< 		next->pprev = pprev;
+< 	*pprev = next;
+< }
+< 
+< static inline struct user_struct *uid_hash_find(uid_t uid, struct user_struct **hashent)
+< {
+< 	struct user_struct *next;
+< 
+< 	next = *hashent;
+< 	for (;;) {
+< 		struct user_struct *up = next;
+< 		if (next) {
+< 			next = up->next;
+< 			if (up->uid != uid)
+< 				continue;
+< 			atomic_inc(&up->__count);
+---
+> 	list_for_each(up, hashent) {
+> 		struct user_struct *user;
+> 
+> 		user = list_entry(up, struct user_struct, uidhash_list);
+> 
+> 		if(user->uid == uid) {
+> 			atomic_inc(&user->__count);
+> 			return user;
+72d61
+< 		return up;
+73a63,69
+> 
+> 	return NULL;
+> }
+> 
+> struct user_struct *find_user(uid_t uid)
+> {
+> 	return uid_hash_find(uid, uidhashentry(uid));
+87c83
+< 	struct user_struct **hashent = uidhashentry(uid);
+---
+> 	struct list_head *hashent = uidhashentry(uid);
+125c121
+<  struct user_struct *old_user;
+---
+> 	struct user_struct *old_user;
+127,137c123,132
+<  /* What if a process setreuid()'s and this brings the
+<  * new uid over his NPROC rlimit? We can check this now
+<  * cheaply with the new uid cache, so if it matters
+<  * we should be checking for it. -DaveM
+<  */
+<  old_user = current->user;
+<  atomic_inc(&new_user->__count);
+<  atomic_inc(&new_user->processes);
+<  atomic_dec(&old_user->processes);
+<  current->user = new_user;
+<  free_uid(old_user);
+---
+> 	/* What if a process setreuid()'s and this brings the
+> 	 * new uid over his NPROC rlimit?  We can check this now
+> 	 * cheaply with the new uid cache, so if it matters
+> 	 * we should be checking for it.  -DaveM
+> 	 */
+> 	old_user = current->user;
+> 	atomic_inc(&new_user->processes);
+> 	atomic_dec(&old_user->processes);
+> 	current->user = new_user;
+> 	free_uid(old_user);
+142a138,139
+> 	int n;
+> 
+149c146,150
+< 	/* Insert the root user immediately - init already runs with this */
+---
+> 	for(n = 0; n < UIDHASH_SZ; ++n)
+> 		INIT_LIST_HEAD(uidhash_table + n);
+> 
+> 	/* Insert the root user immediately (init already runs as root) */
+> 	spin_lock(&uidhash_lock);
+150a152,153
+> 	spin_unlock(&uidhash_lock);
+> 
