@@ -3,6 +3,7 @@
 
 extern void scheduler_tick(int user_tick, int system);
 typedef struct task_struct task_t; // opaque of task_struct
+typedef struct prio_array prio_array_t;
 
 /* /kernel/sched.c */
 
@@ -45,6 +46,27 @@ struct runqueue {
 void schedule_tick(int user_ticks, int sys_ticks) {
 	/* Logic here */
 }
+
+struct prio_array {
+	/* - TODO - check data members exist
+	int nr_active;
+	unsigned long bitmap[BITMAP_SIZE];
+	struct list_head queue[MAX_PRIO];
+	*/
+};
+
+// 602. schedule(void) {
+		// data members
+		long *switch_count;
+		task_t *prev, *next;		// CS518 - opaquing task_struct
+		runqueue_t *rq;				// pointer to current queue
+		prio_array *array;			// priority levels
+		struct list_head *queue;	// defined OK - list.h
+		unsigned long run_time;		// total runtime allowed
+		unsigned long long now; 	// just now double long - 64 bit unsigned integer
+		int idx;
+		// end data members
+// }
 
 /* >>>>> EXTERNAL TO sched.c / sched.h - TIMER / FORK ... <<<<< */
 

@@ -52,7 +52,7 @@ struct prio_array {
 typedef struct runqueue runqueue_t;
 
 struct runqueue {
-	/* CS518 - make sure all types are in place before building - check constants and prio_array
+	/* TODO - make sure all types are in place before building - check constants and prio_array
 	spinlock_t lock;
     unsigned long 	nr_running, nr_switches, expired_timestamp,
 					nr_uninterruptible, timestamp_last_tick;
@@ -75,12 +75,13 @@ struct runqueue {
 /*
 * scheduler_timer will be called by the timer.c. If a task is set as "reschedule", then
 * schedule will be called to handle it.
-*
+* It doesn't determine which job will run, that is the schedule() role,
+* but it will determine whether a job is to yield or not, and mark it accordingly.
 * It also gets called by the fork code, when changing the parent's
 * timeslices. << Haven't looked into this yet
 */
 void scheduler_tick(int user_ticks, int sys_ticks) {
-	// Logic here
+	// TODO - Logic here
 }
 
 /*		*/
@@ -592,20 +593,31 @@ asmlinkage void schedule_tail(struct task_struct *prev)
  * tasks can run. It can not be killed, and it cannot sleep. The 'state'
  * information in task[0] is never used.
  */
+ 
+ /* 
+	CS518 - This is the main scheduler's function
+	This will effectively determine which process will run next, as opposed to
+	scheduler_tick() which will determine whether a process is to yielf or not.
+ */
 asmlinkage void schedule(void)
 {
 	
 	/*
 		Additions for 2.6
 	*/
-	long *switch_count; 
-	task_t *prev, *next;	// CS518 - opaquing task_struct
-	runqueue_t *rq;			// pointer to current queue
-	prio_array *array;		// priority levels
+	long *switch_count;
+	task_t *prev, *next;		// CS518 - opaquing task_struct
+	runqueue_t *rq;				// pointer to current queue
+	prio_array *array;			// priority levels
+	struct list_head *queue;	// defined OK - list.h
+	unsigned long run_time;		// total runtime allowed
+	unsigned long long now; 	// just now double long - 64 bit unsigned integer
+	int idx;
 	/*		*/
+	
 	struct schedule_data * sched_data;
-	struct task_struct *prev, *next, *p;
-	struct list_head *tmp;
+	// replaced - struct task_struct *prev, *next, *p;
+	// replaced - struct list_head *tmp;
 	int this_cpu, c;
 
 
