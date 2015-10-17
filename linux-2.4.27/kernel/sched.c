@@ -37,6 +37,44 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
+/* CS518 - Data Structures */
+
+typedef struct runqueue runqueue_t;
+
+struct runqueue {
+	/* CS518 - make sure all types are in place before building - check constants and prio_array
+	spinlock_t lock;
+    unsigned long 	nr_running, nr_switches, expired_timestamp,
+					nr_uninterruptible, timestamp_last_tick;
+					task_t *curr, *idle;
+    struct mm_struct *prev_mm;
+    prio_array_t *active, *expired, arrays[2];
+    int best_expired_prio, prev_cpu_load[NR_CPUS];
+ #ifdef CONFIG_NUMA
+    atomic_t *node_nr_running;
+    int prev_node_load[MAX_NUMNODES];
+ #endif
+    task_t *migration_thread;
+    struct list_head migration_queue;
+	atomic_t nr_iowait;
+	*/
+};
+
+/* CS518 - Functions */
+
+/*
+* scheduler_timer will be called by the timer.c. If a task is set as "reschedule", then
+* schedule will be called to handle it.
+*
+* It also gets called by the fork code, when changing the parent's
+* timeslices. << Haven't looked into this yet
+*/
+void scheduler_tick(int user_ticks, int sys_ticks) {
+	// Logic here
+}
+
+/*		*/
+
 /*
  * scheduler variables
  */
@@ -546,6 +584,14 @@ asmlinkage void schedule_tail(struct task_struct *prev)
  */
 asmlinkage void schedule(void)
 {
+	
+	/*
+		Additions for 2.6
+	*/
+	long *switch_count; 
+	task_t *prev, *next;	// CS518 - opaquing task_struct
+	runqueue_t *rq;			// pointer to current queue
+	/*		*/
 	struct schedule_data * sched_data;
 	struct task_struct *prev, *next, *p;
 	struct list_head *tmp;

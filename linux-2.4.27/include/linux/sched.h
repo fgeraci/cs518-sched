@@ -29,6 +29,16 @@ extern unsigned long event;
 
 struct exec_domain;
 
+
+/* CS518 - Additions for kernel 2.6 */
+
+typedef struct task_struct task_t;
+
+extern void scheduler_tick(int user_tick, int system);
+
+/*		*/
+
+
 /*
  * cloning flags:
  */
@@ -45,6 +55,7 @@ struct exec_domain;
 #define CLONE_NEWNS	0x00020000	/* New namespace group? */
 
 #define CLONE_SIGNAL	(CLONE_SIGHAND | CLONE_THREAD)
+
 
 /*
  * These are the constant used to fake the fixed-point load-average
@@ -152,6 +163,8 @@ extern int schedule_task(struct tq_struct *task);
 extern void flush_scheduled_tasks(void);
 extern int start_context_thread(void);
 extern int current_is_keventd(void);
+
+
 
 #if CONFIG_SMP
 extern void set_cpus_allowed(struct task_struct *p, unsigned long new_mask);
