@@ -39,6 +39,16 @@ extern void immediate_bh(void);
 
 /* CS518 - Data Structures */
 
+#define BITMAP_SIZE ((((MAX_PRIO+1+7)/8)+sizeof(long)-1)/sizeof(long))
+
+struct prio_array {
+	/* - TODO - check data members exist
+	int nr_active;
+	unsigned long bitmap[BITMAP_SIZE];
+	struct list_head queue[MAX_PRIO];
+	*/
+};
+
 typedef struct runqueue runqueue_t;
 
 struct runqueue {
@@ -591,6 +601,7 @@ asmlinkage void schedule(void)
 	long *switch_count; 
 	task_t *prev, *next;	// CS518 - opaquing task_struct
 	runqueue_t *rq;			// pointer to current queue
+	prio_array *array;		// priority levels
 	/*		*/
 	struct schedule_data * sched_data;
 	struct task_struct *prev, *next, *p;

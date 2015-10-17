@@ -36,6 +36,8 @@ typedef struct task_struct task_t;
 
 extern void scheduler_tick(int user_tick, int system);
 
+typedef struct prio_array prio_array_t;					//opaquing prio_array for actual use in functions
+
 /*		*/
 
 
