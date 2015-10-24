@@ -645,13 +645,12 @@ asmlinkage void schedule(void)
 	int idx;
 	/*		*/
 	
-	//struct schedule_data * sched_data;
-	// replaced - struct task_struct *prev, *next, *p;
-	// replaced - struct list_head *tmp;
+	//struct schedule_data * sched_data;				- rm
+	// replaced - struct task_struct *prev, *next, *p;	- rm
+	// replaced - struct list_head *tmp;				- rm
 	int this_cpu, c;
 
 	/* CS518 - check if schedule is running atomically 	*/
-	// TODO - check likely, unlikely, in_atomic() and constants were defined
 	// bitmask current task state dead or zombie
 	if (likely(!(current->state & (TASK_DEAD | TASK_ZOMBIE)))) {
 		if (unlikely(in_atomic())) {
@@ -661,12 +660,12 @@ asmlinkage void schedule(void)
 	}
 	/*													*/
 
-	spin_lock_prefetch(&runqueue_lock);
+	//spin_lock_prefetch(&runqueue_lock); 				- rm
+	//BUG_ON(!current->active_mm);						- rm
+	
+// need_resched_back:
+need_resched:
 
-	BUG_ON(!current->active_mm);
-	
-	
-need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
 

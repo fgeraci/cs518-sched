@@ -36,7 +36,25 @@ typedef struct task_struct task_t;
 
 extern void scheduler_tick(int user_tick, int system);
 
-typedef struct prio_array prio_array_t;					//opaquing prio_array for actual use in functions
+	//opaquing prio_array for actual use in functions
+	
+typedef struct prio_array prio_array_t;					
+
+	// to be used in schedule(void)
+
+static inline int need_resched(void)
+{
+	return unlikely(test_thread_flag(TIF_NEED_RESCHED));
+}
+
+	// Tasks states (current->state)
+
+#define TASK_RUNNING            0
+#define TASK_INTERRUPTIBLE      1
+#define TASK_UNINTERRUPTIBLE    2
+#define TASK_STOPPED            4
+#define TASK_ZOMBIE             8
+#define TASK_DEAD               16
 
 /*		*/
 
@@ -98,15 +116,6 @@ extern int last_pid;
 #endif
 
 #include <asm/processor.h>
-
-/* CS518 - addition - Tasks states (current->state)*/
-#define TASK_RUNNING            0
-#define TASK_INTERRUPTIBLE      1
-#define TASK_UNINTERRUPTIBLE    2
-#define TASK_STOPPED            4
-#define TASK_ZOMBIE             8
-#define TASK_DEAD               16
-/* 					*/
 
 #define __set_task_state(tsk, state_value)		\
 	do { (tsk)->state = (state_value); } while (0)
