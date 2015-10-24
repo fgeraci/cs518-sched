@@ -98,10 +98,14 @@ extern void mem_use(void);
 * Timeslices are both, the active time a task has been using CPU
 * time spent in the scheduler.
 *
+* On the other hand a TIMESTAMP is a constant value used to calculate
+* the TIMESLICE consumed.
+*
 * Minimum timeslice is 10 msecs, default timeslice is 100 msecs,
 * maximum timeslice is 200 msecs. Timeslices get refilled after
 * they expire.
 */
+
 #define MIN_TIMESLICE           ( 10 * HZ / 1000)
 #define MAX_TIMESLICE           (200 * HZ / 1000)
 #define ON_RUNQUEUE_WEIGHT       30
@@ -116,6 +120,9 @@ extern void mem_use(void);
 #define NS_MAX_SLEEP_AVG        (JIFFIES_TO_NS(MAX_SLEEP_AVG))
 #define NODE_THRESHOLD          125
 #define CREDIT_LIMIT            100
+
+/* 			END OF CS518 Additions for 2.6 			*/
+
 
 /*
  * Scheduling quanta.
@@ -638,15 +645,27 @@ asmlinkage void schedule(void)
 	int idx;
 	/*		*/
 	
-	struct schedule_data * sched_data;
+	//struct schedule_data * sched_data;
 	// replaced - struct task_struct *prev, *next, *p;
 	// replaced - struct list_head *tmp;
 	int this_cpu, c;
 
+	/* CS518 - check if schedule is running atomically 	*/
+	// TODO - check likely, unlikely, in_atomic() and constants were defined
+	// bitmask current task state dead or zombie
+	if (likely(!(current->state & (TASK_DEAD | TASK_ZOMBIE)))) {
+		if (unlikely(in_atomic())) {
+			printk(KERN_ERR "bad: scheduling while atomic!\n");
+			dump_stack();
+		}
+	}
+	/*													*/
 
 	spin_lock_prefetch(&runqueue_lock);
 
 	BUG_ON(!current->active_mm);
+	
+	
 need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
