@@ -87,12 +87,35 @@ void scheduler_tick(int user_ticks, int sys_ticks) {
 /*		*/
 
 /*
- * scheduler variables
+ * CS518 - Scheduler variables
  */
 
 unsigned securebits = SECUREBITS_DEFAULT; /* systemwide security settings */
 
 extern void mem_use(void);
+
+/*
+* Timeslices are both, the active time a task has been using CPU
+* time spent in the scheduler.
+*
+* Minimum timeslice is 10 msecs, default timeslice is 100 msecs,
+* maximum timeslice is 200 msecs. Timeslices get refilled after
+* they expire.
+*/
+#define MIN_TIMESLICE           ( 10 * HZ / 1000)
+#define MAX_TIMESLICE           (200 * HZ / 1000)
+#define ON_RUNQUEUE_WEIGHT       30
+#define CHILD_PENALTY            95
+#define PARENT_PENALTY          100
+#define EXIT_WEIGHT               3
+#define PRIO_BONUS_RATIO         25
+#define MAX_BONUS               (MAX_USER_PRIO * PRIO_BONUS_RATIO / 100)
+#define INTERACTIVE_DELTA         2
+#define MAX_SLEEP_AVG           (AVG_TIMESLICE * MAX_BONUS)
+#define STARVATION_LIMIT        (MAX_SLEEP_AVG)
+#define NS_MAX_SLEEP_AVG        (JIFFIES_TO_NS(MAX_SLEEP_AVG))
+#define NODE_THRESHOLD          125
+#define CREDIT_LIMIT            100
 
 /*
  * Scheduling quanta.
