@@ -30,6 +30,7 @@
 #include <linux/prefetch.h>
 #include <linux/compiler.h>
 
+
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 
@@ -39,7 +40,11 @@ extern void immediate_bh(void);
 
 /* CS518 - Data Structures */
 
+#include <linux/rcupdate.h>		// preempt_disable / enable / cache, list, spinlock, threads, percpu, cpumask
+#define this_rq()               (&__get_cpu_var(runqueues))
+
 #define BITMAP_SIZE ((((MAX_PRIO+1+7)/8)+sizeof(long)-1)/sizeof(long))
+
 
 struct prio_array {
 	/* - TODO - check data members exist
@@ -666,8 +671,10 @@ asmlinkage void schedule(void)
 // need_resched_back:
 need_resched:
 
+	preempt_disable(); 	// added to disable this process preemption
+	
 	prev = current;
-	this_cpu = prev->processor;
+	rq = this_rq();		// defined in percpu.h in asm-generic/x86-64 etc... < included from rcupdate.h
 
 	if (unlikely(in_interrupt())) {
 		printk("Scheduling in interrupt\n");
