@@ -32,6 +32,20 @@
 #include <linux/timex.h>
 #include <asm/hardware.h>
 
+/* CS518 - addition */
+
+/*
+ * Scheduler clock - returns current time in nanosec units.
+ * This is the default implementation.  Sub-architecture
+ * implementations can override this.
+ */
+ unsigned long long __attribute__((weak)) sched_clock(void)
+ {
+         return (unsigned long long)jiffies * (1000000000 / HZ);
+ }
+
+/*					*/
+
 extern int setup_arm_irq(int, struct irqaction *);
 extern rwlock_t xtime_lock;
 extern unsigned long wall_jiffies;

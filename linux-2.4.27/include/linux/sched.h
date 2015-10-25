@@ -11,6 +11,7 @@ extern unsigned long event;
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/times.h>
+#include <linux/jiffies.h>
 #include <linux/timex.h>
 #include <linux/rbtree.h>
 
@@ -31,6 +32,8 @@ struct exec_domain;
 
 
 /* CS518 - Additions for kernel 2.6 */
+
+#include <linux/percpu.h>
 
 typedef struct task_struct task_t;
 
@@ -55,6 +58,9 @@ static inline int need_resched(void)
 #define TASK_STOPPED            4
 #define TASK_ZOMBIE             8
 #define TASK_DEAD               16
+
+	// get scheduler's clock - definition
+extern unsigned long long sched_clock(void);
 
 /*		*/
 

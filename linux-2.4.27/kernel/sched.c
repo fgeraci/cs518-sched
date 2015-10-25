@@ -676,11 +676,25 @@ need_resched:
 	prev = current;
 	rq = this_rq();		// defined in percpu.h in asm-generic/x86-64 etc... < included from rcupdate.h
 
+	// let the old proces go
+	release_kernel_lock(prev);
+	now = sched_clock();
+	
+	// check running time
+	if(likely(now - prev->timestamp < NS_MAX_SLEEP_AVG))
+		run_time = now - prev->timestamp;
+	else
+		run_time = NS_MAX_SLEEP_AVG; // timeslice reahced !!!
+	
+	/* we just checked for this above
 	if (unlikely(in_interrupt())) {
 		printk("Scheduling in interrupt\n");
 		BUG();
 	}
-
+	*/
+	
+	
+	
 	release_kernel_lock(prev, this_cpu);
 
 	/*
