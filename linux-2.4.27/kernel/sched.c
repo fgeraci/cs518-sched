@@ -126,6 +126,92 @@ extern void mem_use(void);
 #define NODE_THRESHOLD          125
 #define CREDIT_LIMIT            100
 
+/* PRIORITY AND TIME-SLICING 	*/
+/*
+ * If a task is 'interactive' then we reinsert it in the active
+ * array after it has expired its current timeslice. (it will not
+ * continue to run immediately, it will still roundrobin with
+ * other interactive tasks.)
+ *
+ * This part scales the interactivity limit depending on niceness.
+ *
+ * We scale it linearly, offset by the INTERACTIVE_DELTA delta.
+ * Here are a few examples of different nice levels:
+ *
+ *  TASK_INTERACTIVE(-20): [1,1,1,1,1,1,1,1,1,0,0]
+ *  TASK_INTERACTIVE(-10): [1,1,1,1,1,1,1,0,0,0,0]
+ *  TASK_INTERACTIVE(  0): [1,1,1,1,0,0,0,0,0,0,0]
+ *  TASK_INTERACTIVE( 10): [1,1,0,0,0,0,0,0,0,0,0]
+ *  TASK_INTERACTIVE( 19): [0,0,0,0,0,0,0,0,0,0,0]
+ *
+ * (the X axis represents the possible -5 ... 0 ... +5 dynamic
+ *  priority range a task can explore, a value of '1' means the
+ *  task is rated interactive.)
+ *
+ * Ie. nice +19 tasks can never get 'interactive' enough to be
+ * reinserted into the active array. And only heavily CPU-hog nice -20
+ * tasks will be expired. Default nice 0 tasks are somewhere between,
+ * it takes some effort for them to get interactive, but it's not
+ * too hard.
+ */
+
+#define CURRENT_BONUS(p) \
+        (NS_TO_JIFFIES((p)->sleep_avg) * MAX_BONUS / \
+                MAX_SLEEP_AVG)
+
+#ifdef CONFIG_SMP
+#define TIMESLICE_GRANULARITY(p)        (MIN_TIMESLICE * \
+                (1 << (((MAX_BONUS - CURRENT_BONUS(p)) ? : 1) - 1)) * \
+                        num_online_cpus())
+#else
+#define TIMESLICE_GRANULARITY(p)        (MIN_TIMESLICE * \
+                (1 << (((MAX_BONUS - CURRENT_BONUS(p)) ? : 1) - 1)))
+#endif
+
+#define SCALE(v1,v1_max,v2_max) \
+        (v1) * (v2_max) / (v1_max)
+
+#define DELTA(p) \
+        (SCALE(TASK_NICE(p), 40, MAX_USER_PRIO*PRIO_BONUS_RATIO/100) + \
+                INTERACTIVE_DELTA)
+
+#define TASK_INTERACTIVE(p) \
+        ((p)->prio <= (p)->static_prio - DELTA(p))
+
+#define INTERACTIVE_SLEEP(p) \
+        (JIFFIES_TO_NS(MAX_SLEEP_AVG * \
+                (MAX_BONUS / 2 + DELTA((p)) + 1) / MAX_BONUS - 1))
+
+#define HIGH_CREDIT(p) \
+        ((p)->interactive_credit > CREDIT_LIMIT)
+
+#define LOW_CREDIT(p) \
+        ((p)->interactive_credit < -CREDIT_LIMIT)
+#define TASK_PREEMPTS_CURR(p, rq) \
+        ((p)->prio < (rq)->curr->prio)
+
+/*
+ * BASE_TIMESLICE scales user-nice values [ -20 ... 19 ]
+ * to time slice values.
+ *
+ * The higher a thread's priority, the bigger timeslices
+ * it gets during one round of execution. But even the lowest
+ * priority thread gets MIN_TIMESLICE worth of execution time.
+ *
+ * task_timeslice() is the interface that is used by the scheduler.
+ */
+
+#define BASE_TIMESLICE(p) (MIN_TIMESLICE + \
+                ((MAX_TIMESLICE - MIN_TIMESLICE) * \
+                        (MAX_PRIO-1 - (p)->static_prio) / (MAX_USER_PRIO-1)))
+
+static inline unsigned int task_timeslice(task_t *p)
+{
+        return BASE_TIMESLICE(p);
+}
+
+/* END OF PRIO AND SLICING		*/
+
 /* 			END OF CS518 Additions for 2.6 			*/
 
 
@@ -686,14 +772,12 @@ need_resched:
 	else
 		run_time = NS_MAX_SLEEP_AVG; // timeslice reahced !!!
 	
-	/* we just checked for this above
-	if (unlikely(in_interrupt())) {
-		printk("Scheduling in interrupt\n");
-		BUG();
-	}
-	*/
+	/* Handle interactive tasks such that they are not penalized */
+	if(HIGH_CREDIT(prev))
+		run_time /= (CURRENT_BONUS(prev) ? : 1);
 	
-	
+	// lock the queue
+	spin_lock_irq(&rq->lock);
 	
 	release_kernel_lock(prev, this_cpu);
 
