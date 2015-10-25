@@ -57,7 +57,6 @@ struct prio_array {
 typedef struct runqueue runqueue_t;
 
 struct runqueue {
-	/* TODO - make sure all types are in place before building - check constants and prio_array
 	spinlock_t lock;
     unsigned long 	nr_running, nr_switches, expired_timestamp,
 					nr_uninterruptible, timestamp_last_tick;
@@ -72,7 +71,6 @@ struct runqueue {
     task_t *migration_thread;
     struct list_head migration_queue;
 	atomic_t nr_iowait;
-	*/
 };
 
 /* CS518 - Functions */
@@ -87,6 +85,46 @@ struct runqueue {
 */
 void scheduler_tick(int user_ticks, int sys_ticks) {
 	// TODO - Logic here
+}
+
+unsigned long nr_running(void)
+{
+        unsigned long i, sum = 0;
+
+        for (i = 0; i < NR_CPUS; i++)
+                sum += cpu_rq(i)->nr_running;
+
+        return sum;
+}
+
+unsigned long nr_uninterruptible(void)
+{
+        unsigned long i, sum = 0;
+
+        for_each_cpu(i)
+                sum += cpu_rq(i)->nr_uninterruptible;
+
+        return sum;
+}
+
+unsigned long nr_context_switches(void)
+{
+        unsigned long i, sum = 0;
+
+        for_each_cpu(i)
+                sum += cpu_rq(i)->nr_switches;
+
+         return sum;
+}
+
+unsigned long nr_iowait(void)
+{
+        unsigned long i, sum = 0;
+
+        for_each_cpu(i)
+                sum += atomic_read(&cpu_rq(i)->nr_iowait);
+
+        return sum;
 }
 
 /*		*/
