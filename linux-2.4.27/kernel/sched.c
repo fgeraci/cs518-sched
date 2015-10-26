@@ -867,8 +867,18 @@ need_resched:
 	// lock the queue
 	spin_lock_irq(&rq->lock);
 	
-	release_kernel_lock(prev, this_cpu);
-
+	// release_kernel_lock(prev, this_cpu);
+	
+	/* If coming from a kernel preemption, continue running the last task */
+	switch_count = &prev->nivcsw;
+	if(prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
+		switch_count = &prev->nvcsw;
+		if(unlikely((prev->state & TASK_INTERRUPTIBLE) && unlikely(signal_pending(prev))))
+			prev->state = TASK_RUNNING;
+		else
+			deactivate_task(prev,rq);
+	}
+	
 	/*
 	 * 'sched_data' is protected by the fact that we can run
 	 * only one process per CPU.
