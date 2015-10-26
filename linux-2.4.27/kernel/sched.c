@@ -843,6 +843,13 @@ asmlinkage void schedule(void)
 	//BUG_ON(!current->active_mm);						- rm
 	
 // need_resched_back:
+/*
+ Linux processes are preemptive. If a process enters the TASK_RUNNING state, 
+ the kernel checks whether its dynamic priority is greater than the priority 
+ of the currently running process. If it is, the execution of current is 
+ interrupted and the scheduler is invoked to select another process to run 
+ (usually the process that just became runnable)
+*/
 need_resched:
 
 	preempt_disable(); 	// added to disable this process preemption
@@ -879,15 +886,23 @@ need_resched:
 			deactivate_task(prev,rq);
 	}
 	
+	// noting running? 
+	if(unlikely(!rq->nr_running)) { // nr_running comes as 0 !!!
+		next = rq->idle; //set the next head of the running queue as next
+		rq->expired_timestamp = 0; // set its timestamp to 0
+		goto switch_tasks;
+	}
+	
 	/*
+	
 	 * 'sched_data' is protected by the fact that we can run
 	 * only one process per CPU.
-	 */
-	sched_data = & aligned_data[this_cpu].schedule_data;
+	 
+	// sched_data = & aligned_data[this_cpu].schedule_data;
 
-	spin_lock_irq(&runqueue_lock);
+	// replaces above - spin_lock_irq(&runqueue_lock);
 
-	/* move an exhausted RR process to be last.. */
+	/* move an exhausted RR process to be last.. 
 	if (unlikely(prev->policy == SCHED_RR))
 		if (!prev->counter) {
 			prev->counter = NICE_TO_TICKS(prev->nice);
@@ -906,9 +921,10 @@ need_resched:
 	}
 	prev->need_resched = 0;
 
-	/*
+	
 	 * this is the scheduler proper:
 	 */
+	 
 ///////ankky/////
 switch_tasks:
 	prefetch(next);     // already exist prefetch.h 
