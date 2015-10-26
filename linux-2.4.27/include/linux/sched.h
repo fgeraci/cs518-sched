@@ -192,7 +192,22 @@ extern int current_is_keventd(void);
 
 #if CONFIG_SMP
 extern void set_cpus_allowed(struct task_struct *p, unsigned long new_mask);
+static inline unsigned int task_cpu(struct task_struct *p)    // added for switch_task
+{
+	return p->thread_info->cpu;
+}
+static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
+{
+	p->thread_info->cpu = cpu;
+}
 #else
+static inline unsigned int task_cpu(struct task_struct *p)
+{
+	return 0;
+}
+static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
+{
+}
 # define set_cpus_allowed(p, new_mask) do { } while (0)
 #endif
 
@@ -454,6 +469,12 @@ struct task_struct {
 	void *journal_info;
 };
 
+/* CS518 - Functions */
+extern void __put_task_struct(struct task_struct *tsk);
+#define get_task_struct(tsk) do { atomic_inc(&(tsk)->usage); } while(0)
+#define put_task_struct(tsk) \
+do { if (atomic_dec_and_test(&(tsk)->usage)) __put_task_struct(tsk); } while(0)
+
 /*
  * Per process flags
  */
@@ -604,7 +625,17 @@ static inline void task_set_cpu(struct task_struct *tsk, unsigned int cpu)
 	tsk->processor = cpu;
 	tsk->cpus_runnable = 1UL << cpu;
 }
+/// ankky  needed for struct task////
+static inline void clear_tsk_thread_flag(struct task_struct *tsk, int flag)
+{
+	clear_ti_thread_flag(tsk->thread_info,flag);
+}
 
+static inline void clear_tsk_need_resched(struct task_struct *tsk)
+{
+	clear_tsk_thread_flag(tsk,TIF_NEED_RESCHED);
+}
+/////// ankky finish////////
 static inline void task_release_cpu(struct task_struct *tsk)
 {
 	tsk->cpus_runnable = ~0UL;

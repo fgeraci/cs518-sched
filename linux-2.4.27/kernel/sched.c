@@ -74,6 +74,16 @@ struct runqueue {
 };
 
 /* CS518 - Functions */
+/*
+ * Default context-switch locking:
+ */
+#ifndef prepare_arch_switch
+# define prepare_arch_switch(rq, next)	do { } while(0)
+# define finish_arch_switch(rq, next)	spin_unlock_irq(&(rq)->lock)
+# define task_running(rq, p)		((rq)->curr == (p))
+#endif
+
+/* CS518 - Functions */
 
 /*
 * scheduler_timer will be called by the timer.c. If a task is set as "reschedule", then
@@ -737,6 +747,46 @@ needs_resched:
 #endif /* CONFIG_SMP */
 }
 
+/**
+ * finish_task_switch - clean up after a task-switch
+ * @prev: the thread we just switched away from.
+ *
+ * We enter this with the runqueue still locked, and finish_arch_switch()
+ * will unlock it along with doing any other architecture-specific cleanup
+ * actions.
+ *
+ * Note that we may have delayed dropping an mm in context_switch(). If
+ * so, we finish that here outside of the runqueue lock.  (Doing it
+ * with the lock held can cause deadlocks; see schedule() for
+ * details.)
+ */
+static inline void finish_task_switch(task_t *prev)
+{
+	runqueue_t *rq = this_rq();
+	struct mm_struct *mm = rq->prev_mm;
+	unsigned long prev_task_flags;
+
+	rq->prev_mm = NULL;
+
+	/*
+	 * A task struct has one reference for the use as "current".
+	 * If a task dies, then it sets TASK_ZOMBIE in tsk->state and calls
+	 * schedule one last time. The schedule call will never return,
+	 * and the scheduled task must drop that reference.
+	 * The test for TASK_ZOMBIE must occur while the runqueue locks are
+	 * still held, otherwise prev could be scheduled on another cpu, die
+	 * there before we look at prev->state, and then the reference would
+	 * be dropped twice.
+	 * 		Manfred Spraul <manfred@colorfullife.com>
+	 */
+	prev_task_flags = prev->flags;
+	finish_arch_switch(rq, prev);
+	if (mm)
+		mmdrop(mm);
+	if (unlikely(prev_task_flags & PF_DEAD))
+		put_task_struct(prev);
+}
+
 asmlinkage void schedule_tail(struct task_struct *prev)
 {
 	__schedule_tail(prev);
@@ -849,7 +899,38 @@ need_resched:
 	/*
 	 * this is the scheduler proper:
 	 */
+///////ankky/////
+switch_tasks:
+	prefetch(next);     // already exist prefetch.h 
+	clear_tsk_need_resched(prev);
+	RCU_qsctr(task_cpu(prev))++;
+	
+	prev->sleep_avg -= run_time;
+	if ((long)prev->sleep_avg <= 0){
+		prev->sleep_avg = 0;
+		if (!(HIGH_CREDIT(prev) || LOW_CREDIT(prev)))
+			prev->interactive_credit--;
+	}
+	prev->timestamp = now;
 
+	if (likely(prev != next)) {
+		next->timestamp = now;
+		rq->nr_switches++;
+		rq->curr = next;
+
+		prepare_arch_switch(rq, next);
+		prev = context_switch(rq, prev, next);
+		barrier();
+
+		finish_task_switch(prev);
+	} else
+		spin_unlock_irq(&rq->lock);
+
+	reacquire_kernel_lock(current);
+	preempt_enable_no_resched();
+	if (test_thread_flag(TIF_NEED_RESCHED))
+		goto need_resched;
+///////// ankky finish//////////////////
 repeat_schedule:
 	/*
 	 * Default process to select..
