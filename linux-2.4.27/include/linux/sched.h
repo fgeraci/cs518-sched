@@ -35,6 +35,13 @@ struct exec_domain;
 
 #include <linux/percpu.h>
 
+#define MAX_USER_RT_PRIO        100
+#define MAX_RT_PRIO             MAX_USER_RT_PRIO
+
+#define MAX_PRIO                (MAX_RT_PRIO + 40)
+
+#define rt_task(p)              ((p)->prio < MAX_RT_PRIO)
+
 typedef struct task_struct task_t;
 
 extern void scheduler_tick(int user_tick, int system);

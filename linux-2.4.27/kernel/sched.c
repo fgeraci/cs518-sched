@@ -47,11 +47,9 @@ extern void immediate_bh(void);
 
 
 struct prio_array {
-	/* - TODO - check data members exist
 	int nr_active;
 	unsigned long bitmap[BITMAP_SIZE];
 	struct list_head queue[MAX_PRIO];
-	*/
 };
 
 typedef struct runqueue runqueue_t;
@@ -95,6 +93,22 @@ struct runqueue {
 */
 void scheduler_tick(int user_ticks, int sys_ticks) {
 	// TODO - Logic here
+}
+
+static inline void dequeue_task(struct task_struct *p, prio_array_t *array)
+{
+        array->nr_active--;
+        list_del(&p->run_list);
+        if (list_empty(array->queue + p->prio))
+                __clear_bit(p->prio, array->bitmap);
+}
+
+static inline void enqueue_task(struct task_struct *p, prio_array_t *array)
+{
+        list_add_tail(&p->run_list, array->queue + p->prio);
+        __set_bit(p->prio, array->bitmap);
+        array->nr_active++;
+        p->array = array;
 }
 
 unsigned long nr_running(void)
@@ -887,44 +901,42 @@ need_resched:
 	}
 	
 	// noting running? 
-	if(unlikely(!rq->nr_running)) { // nr_running comes as 0 !!!
+	if(!rq->nr_running) { // nr_running comes as 0 !!!
 		next = rq->idle; //set the next head of the running queue as next
 		rq->expired_timestamp = 0; // set its timestamp to 0
 		goto switch_tasks;
 	}
 	
-	/*
-	
-	 * 'sched_data' is protected by the fact that we can run
-	 * only one process per CPU.
-	 
-	// sched_data = & aligned_data[this_cpu].schedule_data;
-
-	// replaces above - spin_lock_irq(&runqueue_lock);
-
-	/* move an exhausted RR process to be last.. 
-	if (unlikely(prev->policy == SCHED_RR))
-		if (!prev->counter) {
-			prev->counter = NICE_TO_TICKS(prev->nice);
-			move_last_runqueue(prev);
-		}
-
-	switch (prev->state) {
-		case TASK_INTERRUPTIBLE:
-			if (signal_pending(prev)) {
-				prev->state = TASK_RUNNING;
-				break;
-			}
-		default:
-			del_from_runqueue(prev);
-		case TASK_RUNNING:;
+	// get the currently active array swap it with the expired
+	array = rq->active;
+	/* Manage the priority array */
+	if(!array->nr_active) {
+		// set the expired as active
+		rq->active = rq->expired;
+		// put the previous as expired
+		rq->expired = array;
+		// make the actual the active
+		array = rq->active;
+		rq->expired_timestamp = 0; // reset the timestamp
+		rq->best_expired_prio = MAX_PRIO; // set it with max priority
 	}
-	prev->need_resched = 0;
-
 	
-	 * this is the scheduler proper:
-	 */
-	 
+	idx = sched_find_first_bit(array->bitmap);
+	queue = array->queue + idx;
+	next = list_entry(queue->next, task_t, run_list);
+	if(next->activated > 0) {
+		unsigned long long delta = now - next->timestamp;
+		if(next->activated == 1) {
+			delta = delta * (ON_RUNQUEUE_WEIGHT * 128 / 100) / 128;
+		}
+		
+		array = next->array;
+		dequeue_task(next, array);
+		recalc_task_prio(next, next->timestamp + delta);
+		enqueue_task(next,array);
+		// TODO - implement this
+	}
+	next->activated = 0;
 ///////ankky/////
 switch_tasks:
 	prefetch(next);     // already exist prefetch.h 
