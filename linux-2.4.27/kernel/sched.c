@@ -37,6 +37,21 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
+/* CS518 - Additions 	*/
+
+#define PRIO_QUEUES			256
+
+typedef struct runqueue runqueue_t;
+
+struct runqueue {
+	spinlock_t lock;
+	struct list_head *queue;
+	unsigned long priority;
+	
+}
+
+/*						*/
+
 /*
  * scheduler variables
  */
