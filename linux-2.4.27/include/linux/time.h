@@ -28,17 +28,6 @@ struct timespec {
  */
 #define MAX_JIFFY_OFFSET ((~0UL >> 1)-1)
 
-/* CS518 additions 	*/
-
-/*
- * Have the 32 bit jiffies value wrap 5 minutes after boot
- * so jiffies wrap bugs show up earlier.
- */
-#define INITIAL_JIFFIES ((unsigned long)(unsigned int) (-300*HZ))
-
-
-/*					*/
-
 static __inline__ unsigned long
 timespec_to_jiffies(struct timespec *value)
 {

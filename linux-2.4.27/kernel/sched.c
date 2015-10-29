@@ -30,7 +30,6 @@
 #include <linux/prefetch.h>
 #include <linux/compiler.h>
 
-
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 
@@ -38,245 +37,13 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
-/* CS518 - Data Structures */
-
-#include <linux/rcupdate.h>		// preempt_disable / enable / cache, list, spinlock, threads, percpu, cpumask
-#define this_rq()               (&__get_cpu_var(runqueues))
-
-#define BITMAP_SIZE ((((MAX_PRIO+1+7)/8)+sizeof(long)-1)/sizeof(long))
-
-
-struct prio_array {
-	int nr_active;
-	unsigned long bitmap[BITMAP_SIZE];
-	struct list_head queue[MAX_PRIO];
-};
-
-typedef struct runqueue runqueue_t;
-
-struct runqueue {
-	spinlock_t lock;
-    unsigned long 	nr_running, nr_switches, expired_timestamp,
-					nr_uninterruptible, timestamp_last_tick;
-	task_t *curr, *idle;
-    struct mm_struct *prev_mm;
-    // we will keep two arrays for active and expired jobs
-	prio_array_t *active, *expired, arrays[2];
-    int best_expired_prio, prev_cpu_load[NR_CPUS];
- #ifdef CONFIG_NUMA
-    atomic_t *node_nr_running;
-    int prev_node_load[MAX_NUMNODES];
- #endif
-    task_t *migration_thread;
-    struct list_head migration_queue;
-	atomic_t nr_iowait;
-};
-
-/* CS518 - Functions */
 /*
- * Default context-switch locking:
- */
-#ifndef prepare_arch_switch
-# define prepare_arch_switch(rq, next)	do { } while(0)
-# define finish_arch_switch(rq, next)	spin_unlock_irq(&(rq)->lock)
-# define task_running(rq, p)		((rq)->curr == (p))
-#endif
-
-/* CS518 - Functions */
-
-/*
-* scheduler_timer will be called by the timer.c. If a task is set as "reschedule", then
-* schedule will be called to handle it.
-* It doesn't determine which job will run, that is the schedule() role,
-* but it will determine whether a job is to yield or not, and mark it accordingly.
-* It also gets called by the fork code, when changing the parent's
-* timeslices. << Haven't looked into this yet
-*/
-void scheduler_tick(int user_ticks, int sys_ticks) {
-	// TODO - Logic here
-}
-
-static inline void dequeue_task(struct task_struct *p, prio_array_t *array)
-{
-        array->nr_active--;
-        list_del(&p->run_list);
-        if (list_empty(array->queue + p->prio))
-                __clear_bit(p->prio, array->bitmap);
-}
-
-static inline void enqueue_task(struct task_struct *p, prio_array_t *array)
-{
-        list_add_tail(&p->run_list, array->queue + p->prio);
-        __set_bit(p->prio, array->bitmap);
-        array->nr_active++;
-        p->array = array;
-}
-
-unsigned long nr_running(void)
-{
-        unsigned long i, sum = 0;
-
-        for (i = 0; i < NR_CPUS; i++)
-                sum += cpu_rq(i)->nr_running;
-
-        return sum;
-}
-
-unsigned long nr_uninterruptible(void)
-{
-        unsigned long i, sum = 0;
-
-        for_each_cpu(i)
-                sum += cpu_rq(i)->nr_uninterruptible;
-
-        return sum;
-}
-
-unsigned long nr_context_switches(void)
-{
-        unsigned long i, sum = 0;
-
-        for_each_cpu(i)
-                sum += cpu_rq(i)->nr_switches;
-
-         return sum;
-}
-
-unsigned long nr_iowait(void)
-{
-        unsigned long i, sum = 0;
-
-        for_each_cpu(i)
-                sum += atomic_read(&cpu_rq(i)->nr_iowait);
-
-        return sum;
-}
-
-/*		*/
-
-/*
- * CS518 - Scheduler variables
+ * scheduler variables
  */
 
 unsigned securebits = SECUREBITS_DEFAULT; /* systemwide security settings */
 
 extern void mem_use(void);
-
-/*
-* Timeslices are both, the active time a task has been using CPU
-* time spent in the scheduler.
-*
-* On the other hand a TIMESTAMP is a constant value used to calculate
-* the TIMESLICE consumed.
-*
-* Minimum timeslice is 10 msecs, default timeslice is 100 msecs,
-* maximum timeslice is 200 msecs. Timeslices get refilled after
-* they expire.
-*/
-
-#define MIN_TIMESLICE           ( 10 * HZ / 1000)
-#define MAX_TIMESLICE           (200 * HZ / 1000)
-#define ON_RUNQUEUE_WEIGHT       30
-#define CHILD_PENALTY            95
-#define PARENT_PENALTY          100
-#define EXIT_WEIGHT               3
-#define PRIO_BONUS_RATIO         25
-#define MAX_BONUS               (MAX_USER_PRIO * PRIO_BONUS_RATIO / 100)
-#define INTERACTIVE_DELTA         2
-#define MAX_SLEEP_AVG           (AVG_TIMESLICE * MAX_BONUS)
-#define STARVATION_LIMIT        (MAX_SLEEP_AVG)
-#define NS_MAX_SLEEP_AVG        (JIFFIES_TO_NS(MAX_SLEEP_AVG))
-#define NODE_THRESHOLD          125
-#define CREDIT_LIMIT            100
-
-/* PRIORITY AND TIME-SLICING 	*/
-/*
- * If a task is 'interactive' then we reinsert it in the active
- * array after it has expired its current timeslice. (it will not
- * continue to run immediately, it will still roundrobin with
- * other interactive tasks.)
- *
- * This part scales the interactivity limit depending on niceness.
- *
- * We scale it linearly, offset by the INTERACTIVE_DELTA delta.
- * Here are a few examples of different nice levels:
- *
- *  TASK_INTERACTIVE(-20): [1,1,1,1,1,1,1,1,1,0,0]
- *  TASK_INTERACTIVE(-10): [1,1,1,1,1,1,1,0,0,0,0]
- *  TASK_INTERACTIVE(  0): [1,1,1,1,0,0,0,0,0,0,0]
- *  TASK_INTERACTIVE( 10): [1,1,0,0,0,0,0,0,0,0,0]
- *  TASK_INTERACTIVE( 19): [0,0,0,0,0,0,0,0,0,0,0]
- *
- * (the X axis represents the possible -5 ... 0 ... +5 dynamic
- *  priority range a task can explore, a value of '1' means the
- *  task is rated interactive.)
- *
- * Ie. nice +19 tasks can never get 'interactive' enough to be
- * reinserted into the active array. And only heavily CPU-hog nice -20
- * tasks will be expired. Default nice 0 tasks are somewhere between,
- * it takes some effort for them to get interactive, but it's not
- * too hard.
- */
-
-#define CURRENT_BONUS(p) \
-        (NS_TO_JIFFIES((p)->sleep_avg) * MAX_BONUS / \
-                MAX_SLEEP_AVG)
-
-#ifdef CONFIG_SMP
-#define TIMESLICE_GRANULARITY(p)        (MIN_TIMESLICE * \
-                (1 << (((MAX_BONUS - CURRENT_BONUS(p)) ? : 1) - 1)) * \
-                        num_online_cpus())
-#else
-#define TIMESLICE_GRANULARITY(p)        (MIN_TIMESLICE * \
-                (1 << (((MAX_BONUS - CURRENT_BONUS(p)) ? : 1) - 1)))
-#endif
-
-#define SCALE(v1,v1_max,v2_max) \
-        (v1) * (v2_max) / (v1_max)
-
-#define DELTA(p) \
-        (SCALE(TASK_NICE(p), 40, MAX_USER_PRIO*PRIO_BONUS_RATIO/100) + \
-                INTERACTIVE_DELTA)
-
-#define TASK_INTERACTIVE(p) \
-        ((p)->prio <= (p)->static_prio - DELTA(p))
-
-#define INTERACTIVE_SLEEP(p) \
-        (JIFFIES_TO_NS(MAX_SLEEP_AVG * \
-                (MAX_BONUS / 2 + DELTA((p)) + 1) / MAX_BONUS - 1))
-
-#define HIGH_CREDIT(p) \
-        ((p)->interactive_credit > CREDIT_LIMIT)
-
-#define LOW_CREDIT(p) \
-        ((p)->interactive_credit < -CREDIT_LIMIT)
-#define TASK_PREEMPTS_CURR(p, rq) \
-        ((p)->prio < (rq)->curr->prio)
-
-/*
- * BASE_TIMESLICE scales user-nice values [ -20 ... 19 ]
- * to time slice values.
- *
- * The higher a thread's priority, the bigger timeslices
- * it gets during one round of execution. But even the lowest
- * priority thread gets MIN_TIMESLICE worth of execution time.
- *
- * task_timeslice() is the interface that is used by the scheduler.
- */
-
-#define BASE_TIMESLICE(p) (MIN_TIMESLICE + \
-                ((MAX_TIMESLICE - MIN_TIMESLICE) * \
-                        (MAX_PRIO-1 - (p)->static_prio) / (MAX_USER_PRIO-1)))
-
-static inline unsigned int task_timeslice(task_t *p)
-{
-        return BASE_TIMESLICE(p);
-}
-
-/* END OF PRIO AND SLICING		*/
-
-/* 			END OF CS518 Additions for 2.6 			*/
-
 
 /*
  * Scheduling quanta.
@@ -762,46 +529,6 @@ needs_resched:
 #endif /* CONFIG_SMP */
 }
 
-/**
- * finish_task_switch - clean up after a task-switch
- * @prev: the thread we just switched away from.
- *
- * We enter this with the runqueue still locked, and finish_arch_switch()
- * will unlock it along with doing any other architecture-specific cleanup
- * actions.
- *
- * Note that we may have delayed dropping an mm in context_switch(). If
- * so, we finish that here outside of the runqueue lock.  (Doing it
- * with the lock held can cause deadlocks; see schedule() for
- * details.)
- */
-static inline void finish_task_switch(task_t *prev)
-{
-	runqueue_t *rq = this_rq();
-	struct mm_struct *mm = rq->prev_mm;
-	unsigned long prev_task_flags;
-
-	rq->prev_mm = NULL;
-
-	/*
-	 * A task struct has one reference for the use as "current".
-	 * If a task dies, then it sets TASK_ZOMBIE in tsk->state and calls
-	 * schedule one last time. The schedule call will never return,
-	 * and the scheduled task must drop that reference.
-	 * The test for TASK_ZOMBIE must occur while the runqueue locks are
-	 * still held, otherwise prev could be scheduled on another cpu, die
-	 * there before we look at prev->state, and then the reference would
-	 * be dropped twice.
-	 * 		Manfred Spraul <manfred@colorfullife.com>
-	 */
-	prev_task_flags = prev->flags;
-	finish_arch_switch(rq, prev);
-	if (mm)
-		mmdrop(mm);
-	if (unlikely(prev_task_flags & PF_DEAD))
-		put_task_struct(prev);
-}
-
 asmlinkage void schedule_tail(struct task_struct *prev)
 {
 	__schedule_tail(prev);
@@ -817,158 +544,163 @@ asmlinkage void schedule_tail(struct task_struct *prev)
  * tasks can run. It can not be killed, and it cannot sleep. The 'state'
  * information in task[0] is never used.
  */
- 
- /* 
-	CS518 - This is the main scheduler's function
-	This will effectively determine which process will run next, as opposed to
-	scheduler_tick() which will determine whether a process is to yielf or not.
- */
 asmlinkage void schedule(void)
 {
-	
-	/*
-		Additions for 2.6
-	*/
-	long *switch_count;
-	task_t *prev, *next;		// CS518 - opaquing task_struct
-	runqueue_t *rq;				// pointer to current queue
-	prio_array *array;			// priority levels
-	struct list_head *queue;	// defined OK - list.h
-	unsigned long run_time;		// total runtime allowed
-	unsigned long long now; 	// just now double long - 64 bit unsigned integer
-	int idx;
-	/*		*/
-	
-	//struct schedule_data * sched_data;				- rm
-	// replaced - struct task_struct *prev, *next, *p;	- rm
-	// replaced - struct list_head *tmp;				- rm
+	struct schedule_data * sched_data;
+	struct task_struct *prev, *next, *p;
+	struct list_head *tmp;
 	int this_cpu, c;
 
-	/* CS518 - check if schedule is running atomically 	*/
-	// bitmask current task state dead or zombie
-	if (likely(!(current->state & (TASK_DEAD | TASK_ZOMBIE)))) {
-		if (unlikely(in_atomic())) {
-			printk(KERN_ERR "bad: scheduling while atomic!\n");
-			dump_stack();
-		}
-	}
-	/*													*/
 
-	//spin_lock_prefetch(&runqueue_lock); 				- rm
-	//BUG_ON(!current->active_mm);						- rm
-	
-// need_resched_back:
-/*
- Linux processes are preemptive. If a process enters the TASK_RUNNING state, 
- the kernel checks whether its dynamic priority is greater than the priority 
- of the currently running process. If it is, the execution of current is 
- interrupted and the scheduler is invoked to select another process to run 
- (usually the process that just became runnable)
-*/
-need_resched:
+	spin_lock_prefetch(&runqueue_lock);
 
-	preempt_disable(); 	// added to disable this process preemption
-	
+	BUG_ON(!current->active_mm);
+
+need_resched_back:
 	prev = current;
-	rq = this_rq();		// defined in percpu.h in asm-generic/x86-64 etc... < included from rcupdate.h
+	this_cpu = prev->processor;
 
-	// let the old proces go
-	release_kernel_lock(prev);
-	now = sched_clock();
-	
-	// check running time
-	if(likely(now - prev->timestamp < NS_MAX_SLEEP_AVG))
-		run_time = now - prev->timestamp;
-	else
-		run_time = NS_MAX_SLEEP_AVG; // timeslice reahced !!!
-	
-	/* Handle interactive tasks such that they are not penalized */
-	if(HIGH_CREDIT(prev))
-		run_time /= (CURRENT_BONUS(prev) ? : 1);
-	
-	// lock the queue
-	spin_lock_irq(&rq->lock);
-	
-	// release_kernel_lock(prev, this_cpu);
-	
-	/* If coming from a kernel preemption, continue running the last task */
-	switch_count = &prev->nivcsw;
-	if(prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
-		switch_count = &prev->nvcsw;
-		if(unlikely((prev->state & TASK_INTERRUPTIBLE) && unlikely(signal_pending(prev))))
-			prev->state = TASK_RUNNING;
-		else
-			deactivate_task(prev,rq);
+	if (unlikely(in_interrupt())) {
+		printk("Scheduling in interrupt\n");
+		BUG();
 	}
-	
-	// noting running? 
-	if(!rq->nr_running) { // nr_running comes as 0 !!!
-		next = rq->idle; //set the next head of the running queue as next
-		rq->expired_timestamp = 0; // set its timestamp to 0
-		goto switch_tasks;
-	}
-	
-	// get the currently active array swap it with the expired
-	array = rq->active;
-	/* Manage the priority array */
-	if(!array->nr_active) {
-		// set the expired as active
-		rq->active = rq->expired;
-		// put the previous as expired
-		rq->expired = array;
-		// make the actual the active
-		array = rq->active;
-		rq->expired_timestamp = 0; // reset the timestamp
-		rq->best_expired_prio = MAX_PRIO; // set it with max priority
-	}
-	
-	idx = sched_find_first_bit(array->bitmap);
-	queue = array->queue + idx;
-	next = list_entry(queue->next, task_t, run_list);
-	if(next->activated > 0) {
-		unsigned long long delta = now - next->timestamp;
-		if(next->activated == 1) {
-			delta = delta * (ON_RUNQUEUE_WEIGHT * 128 / 100) / 128;
+
+	release_kernel_lock(prev, this_cpu);
+
+	/*
+	 * 'sched_data' is protected by the fact that we can run
+	 * only one process per CPU.
+	 */
+	sched_data = & aligned_data[this_cpu].schedule_data;
+
+	spin_lock_irq(&runqueue_lock);
+
+	/* move an exhausted RR process to be last.. */
+	if (unlikely(prev->policy == SCHED_RR))
+		if (!prev->counter) {
+			prev->counter = NICE_TO_TICKS(prev->nice);
+			move_last_runqueue(prev);
 		}
-		array = next->array;
-		dequeue_task(next, array);
-		recalc_task_prio(next, next->timestamp + delta);
-		enqueue_task(next,array);
-		// TODO - implement this
+
+	switch (prev->state) {
+		case TASK_INTERRUPTIBLE:
+			if (signal_pending(prev)) {
+				prev->state = TASK_RUNNING;
+				break;
+			}
+		default:
+			del_from_runqueue(prev);
+		case TASK_RUNNING:;
 	}
-	next->activated = 0;
-///////ankky/////
-switch_tasks:
-	prefetch(next);     // already exist prefetch.h 
-	clear_tsk_need_resched(prev);
-	RCU_qsctr(task_cpu(prev))++;
-	
-	prev->sleep_avg -= run_time;
-	if ((long)prev->sleep_avg <= 0){
-		prev->sleep_avg = 0;
-		if (!(HIGH_CREDIT(prev) || LOW_CREDIT(prev)))
-			prev->interactive_credit--;
+	prev->need_resched = 0;
+
+	/*
+	 * this is the scheduler proper:
+	 */
+
+repeat_schedule:
+	/*
+	 * Default process to select..
+	 */
+	next = idle_task(this_cpu);
+	c = -1000;
+	list_for_each(tmp, &runqueue_head) {
+		p = list_entry(tmp, struct task_struct, run_list);
+		if (can_schedule(p, this_cpu)) {
+			int weight = goodness(p, this_cpu, prev->active_mm);
+			if (weight > c)
+				c = weight, next = p;
+		}
 	}
-	prev->timestamp = now;
 
-	if (likely(prev != next)) {
-		next->timestamp = now;
-		rq->nr_switches++;
-		rq->curr = next;
+	/* Do we need to re-calculate counters? */
+	if (unlikely(!c)) {
+		struct task_struct *p;
 
-		prepare_arch_switch(rq, next);
-		prev = context_switch(rq, prev, next);
-		barrier();
+		spin_unlock_irq(&runqueue_lock);
+		read_lock(&tasklist_lock);
+		for_each_task(p)
+			p->counter = (p->counter >> 1) + NICE_TO_TICKS(p->nice);
+		read_unlock(&tasklist_lock);
+		spin_lock_irq(&runqueue_lock);
+		goto repeat_schedule;
+	}
 
-		finish_task_switch(prev);
-	} else
-		spin_unlock_irq(&rq->lock);
+	/*
+	 * from this point on nothing can prevent us from
+	 * switching to the next task, save this fact in
+	 * sched_data.
+	 */
+	sched_data->curr = next;
+	task_set_cpu(next, this_cpu);
+	spin_unlock_irq(&runqueue_lock);
 
+	if (unlikely(prev == next)) {
+		/* We won't go through the normal tail, so do this by hand */
+		prev->policy &= ~SCHED_YIELD;
+		goto same_process;
+	}
+
+#ifdef CONFIG_SMP
+ 	/*
+ 	 * maintain the per-process 'last schedule' value.
+ 	 * (this has to be recalculated even if we reschedule to
+ 	 * the same process) Currently this is only used on SMP,
+	 * and it's approximate, so we do not have to maintain
+	 * it while holding the runqueue spinlock.
+ 	 */
+ 	sched_data->last_schedule = get_cycles();
+
+	/*
+	 * We drop the scheduler lock early (it's a global spinlock),
+	 * thus we have to lock the previous process from getting
+	 * rescheduled during switch_to().
+	 */
+
+#endif /* CONFIG_SMP */
+
+	kstat.context_swtch++;
+	/*
+	 * there are 3 processes which are affected by a context switch:
+	 *
+	 * prev == .... ==> (last => next)
+	 *
+	 * It's the 'much more previous' 'prev' that is on next's stack,
+	 * but prev is set to (the just run) 'last' process by switch_to().
+	 * This might sound slightly confusing but makes tons of sense.
+	 */
+	prepare_to_switch();
+	{
+		struct mm_struct *mm = next->mm;
+		struct mm_struct *oldmm = prev->active_mm;
+		if (!mm) {
+			BUG_ON(next->active_mm);
+			next->active_mm = oldmm;
+			atomic_inc(&oldmm->mm_count);
+			enter_lazy_tlb(oldmm, next, this_cpu);
+		} else {
+			BUG_ON(next->active_mm != mm);
+			switch_mm(oldmm, mm, next, this_cpu);
+		}
+
+		if (!prev->mm) {
+			prev->active_mm = NULL;
+			mmdrop(oldmm);
+		}
+	}
+
+	/*
+	 * This just switches the register state and the
+	 * stack.
+	 */
+	switch_to(prev, next, prev);
+	__schedule_tail(prev);
+
+same_process:
 	reacquire_kernel_lock(current);
-	preempt_enable_no_resched();
-	if (test_thread_flag(TIF_NEED_RESCHED))
-		goto need_resched;
-///////// ankky finish//////////////////
+	if (current->need_resched)
+		goto need_resched_back;
+	return;
 }
 
 /*
