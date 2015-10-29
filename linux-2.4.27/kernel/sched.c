@@ -37,21 +37,6 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
-/* CS518 - Additions 	*/
-
-#define PRIO_QUEUES			256
-
-typedef struct runqueue runqueue_t;
-
-struct runqueue {
-	spinlock_t lock;
-	struct list_head *queue;
-	unsigned long priority;
-	
-}
-
-/*						*/
-
 /*
  * scheduler variables
  */
@@ -570,7 +555,6 @@ asmlinkage void schedule(void)
 	spin_lock_prefetch(&runqueue_lock);
 
 	BUG_ON(!current->active_mm);
-
 need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
