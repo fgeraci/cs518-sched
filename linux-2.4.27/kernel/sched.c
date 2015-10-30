@@ -37,20 +37,23 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
+/* CS518 - Utils functions */
+
+// we need to define this function, using maybe 2.6 bitops.h implementation or alike
+int sched_find_first_zero_bit(unsigned long *bitmap) {
+	// TODO - definition here ... let's just use the arch specific
+	return 0;
+}
+
+
+/* end util funcs 	   */
+
 #define MAX_PRIO 256
 #define BITMAP_SIZE ((MAX_PRIO+7)/8)
 
-typedef struct runqueue runqueue_t;
 
-struct prio_array {
-	int nr_active;                // /* number of tasks */ 
-	//spinlock_t *lock;
-	//runqueue_t *rq;
-	char bitmap[BITMAP_SIZE];        /* priority bitmap */
-	struct list_head queue[MAX_PRIO];
-};
+#define this_rq()	(current->queue) // (runqueues + smp_processor_id())
 
-#define this_rq()		(runqueues + smp_processor_id())
 /*
  * This is the main, per-CPU runqueue data structure.
  *
@@ -58,14 +61,25 @@ struct prio_array {
  * (such as the load balancing or the process migration code), lock
  * acquire operations must be ordered by rq->cpu.
  */
-static struct runqueue {
+
+struct runqueue {
 	int cpu;
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
-	task_t *curr, *idle;
-	prio_array_t *active, *expired, arrays[2];
+	task_t *curr, *idle, *next;
+	prio_array_t *active, *expired; // , arrays[2]; // why two arrays in runque?
 	char __pad [SMP_CACHE_BYTES];
 } runqueues;
+
+struct prio_array {
+	int nr_active;                // /* number of tasks */ 
+	spinlock_t *lock;
+	runqueue_t *rq;				// current active queue
+	unsigned long bitmap[BITMAP_SIZE];        /* priority bitmap */
+	struct runqueue queue[MAX_PRIO];	// an array of 256 queues
+	// struct list_head queue[MAX_PRIO];
+} array;
+
 /*
  * scheduler variables
  */
@@ -105,7 +119,7 @@ extern void mem_use(void);
  *	via the SMP irq return path.
  */
  
-struct task_struct * init_tasks[NR_CPUS] = {&init_task, };
+struct task_struct *init_tasks[NR_CPUS] = {&init_task, };
 
 /*
  * The tasklist_lock protects the linked list of processes.
@@ -610,10 +624,10 @@ asmlinkage void schedule(void)
 {
 	struct schedule_data * sched_data;
 	prio_array_t *array;
-	runqueue_t *rq;
-	struct task_struct *prev, *next, *p;
-	struct list_head *tmp;
-	int this_cpu, c;
+	runqueue_t *rq, *queue;
+	struct task_struct *prev, *next;// , *p; unused
+	// struct list_head *tmp; unused
+	int this_cpu; //, c; unused
 	int idx;
 
 	rq = this_rq(); 

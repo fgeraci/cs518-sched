@@ -109,6 +109,14 @@ extern int last_pid;
 #define SCHED_FIFO		1
 #define SCHED_RR		2
 
+/* CS518 changes */
+
+typedef struct prio_array prio_array_t;         // prio_array opaque
+typedef struct task_struct task_t;              // task_struct opaque
+typedef struct runqueue runqueue_t;		// runqueue opaque
+
+/* end		 */
+
 /*
  * This is an additional bit set when we want to
  * yield the CPU for one re-schedule..
@@ -291,10 +299,11 @@ struct task_struct {
 					 	0-0xBFFFFFFF for user-thead
 						0-0xFFFFFFFF for kernel-thread
 					 */
+	unsigned int cpu;
 	struct exec_domain *exec_domain;
 	volatile long need_resched;
 	unsigned long ptrace;
-
+	runqueue_t *queue;
 	int lock_depth;		/* Lock depth */
 
 /*
