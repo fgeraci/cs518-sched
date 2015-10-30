@@ -37,6 +37,35 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
+#define MAX_PRIO 256
+#define BITMAP_SIZE ((MAX_PRIO+7)/8)
+
+typedef struct runqueue runqueue_t;
+
+struct prio_array {
+	int nr_active;                // /* number of tasks */ 
+	//spinlock_t *lock;
+	//runqueue_t *rq;
+	char bitmap[BITMAP_SIZE];        /* priority bitmap */
+	struct list_head queue[MAX_PRIO];
+};
+
+#define this_rq()		(runqueues + smp_processor_id())
+/*
+ * This is the main, per-CPU runqueue data structure.
+ *
+ * Locking rule: those places that want to lock multiple runqueues
+ * (such as the load balancing or the process migration code), lock
+ * acquire operations must be ordered by rq->cpu.
+ */
+static struct runqueue {
+	int cpu;
+	spinlock_t lock;
+	unsigned long nr_running, nr_switches;
+	task_t *curr, *idle;
+	prio_array_t *active, *expired, arrays[2];
+	char __pad [SMP_CACHE_BYTES];
+} runqueues;
 /*
  * scheduler variables
  */
@@ -126,6 +155,39 @@ extern struct task_struct *child_reaper;
 #endif
 
 void scheduling_functions_start_here(void) { }
+
+static inline void context_switch(task_t *prev, task_t *next)
+{
+	struct mm_struct *mm = next->mm;
+	struct mm_struct *oldmm = prev->active_mm;
+
+	prepare_to_switch();
+
+	if (!mm) {
+		next->active_mm = oldmm;
+		atomic_inc(&oldmm->mm_count);
+		enter_lazy_tlb(oldmm, next, smp_processor_id());
+	} else
+		switch_mm(oldmm, mm, next, smp_processor_id());
+
+	if (!prev->mm) {
+		prev->active_mm = NULL;
+		mmdrop(oldmm);
+	}
+
+	/*
+	 * Here we just switch the register state and the stack. There are
+	 * 3 processes affected by a context switch:
+	 *
+	 * prev ==> .... ==> (last => next)
+	 *
+	 * It's the 'much more previous' 'prev' that is on next's stack,
+	 * but prev is set to (the just run) 'last' process by switch_to().
+	 * This might sound slightly confusing but makes tons of sense.
+	 */
+	switch_to(prev, next, prev);
+}
+
 
 /*
  * This is the function that decides how desirable a process is..
@@ -547,11 +609,14 @@ asmlinkage void schedule_tail(struct task_struct *prev)
 asmlinkage void schedule(void)
 {
 	struct schedule_data * sched_data;
+	prio_array_t *array;
+	runqueue_t *rq;
 	struct task_struct *prev, *next, *p;
 	struct list_head *tmp;
 	int this_cpu, c;
+	int idx;
 
-
+	rq = this_rq(); 
 	spin_lock_prefetch(&runqueue_lock);
 
 	BUG_ON(!current->active_mm);
@@ -575,11 +640,11 @@ need_resched_back:
 	spin_lock_irq(&runqueue_lock);
 
 	/* move an exhausted RR process to be last.. */
-	if (unlikely(prev->policy == SCHED_RR))
-		if (!prev->counter) {
-			prev->counter = NICE_TO_TICKS(prev->nice);
-			move_last_runqueue(prev);
-		}
+	// if (unlikely(prev->policy == SCHED_RR))
+		// if (!prev->counter) {
+			// prev->counter = NICE_TO_TICKS(prev->nice);
+			// move_last_runqueue(prev);
+		// }
 
 	switch (prev->state) {
 		case TASK_INTERRUPTIBLE:
@@ -592,112 +657,30 @@ need_resched_back:
 		case TASK_RUNNING:;
 	}
 	prev->need_resched = 0;
-
+	idx = sched_find_first_zero_bit(array->bitmap);
+	queue = array->queue + idx;
+	next = list_entry(queue->next, task_t, run_list);
 	/*
 	 * this is the scheduler proper:
 	 */
-
-repeat_schedule:
-	/*
-	 * Default process to select..
-	 */
-	next = idle_task(this_cpu);
-	c = -1000;
-	list_for_each(tmp, &runqueue_head) {
-		p = list_entry(tmp, struct task_struct, run_list);
-		if (can_schedule(p, this_cpu)) {
-			int weight = goodness(p, this_cpu, prev->active_mm);
-			if (weight > c)
-				c = weight, next = p;
-		}
+switch_tasks:
+	if (likely(prev != next)) {
+		rq->nr_switches++;
+		rq->curr = next;
+		next->cpu = prev->cpu;
+		context_switch(prev, next);
+		/*
+		 * The runqueue pointer might be from another CPU
+		 * if the new task was last running on a different
+		 * CPU - thus re-load it.
+		 */
+		barrier();
+		rq = this_rq();
 	}
+	spin_unlock_irq(&rq->lock);
 
-	/* Do we need to re-calculate counters? */
-	if (unlikely(!c)) {
-		struct task_struct *p;
-
-		spin_unlock_irq(&runqueue_lock);
-		read_lock(&tasklist_lock);
-		for_each_task(p)
-			p->counter = (p->counter >> 1) + NICE_TO_TICKS(p->nice);
-		read_unlock(&tasklist_lock);
-		spin_lock_irq(&runqueue_lock);
-		goto repeat_schedule;
-	}
-
-	/*
-	 * from this point on nothing can prevent us from
-	 * switching to the next task, save this fact in
-	 * sched_data.
-	 */
-	sched_data->curr = next;
-	task_set_cpu(next, this_cpu);
-	spin_unlock_irq(&runqueue_lock);
-
-	if (unlikely(prev == next)) {
-		/* We won't go through the normal tail, so do this by hand */
-		prev->policy &= ~SCHED_YIELD;
-		goto same_process;
-	}
-
-#ifdef CONFIG_SMP
- 	/*
- 	 * maintain the per-process 'last schedule' value.
- 	 * (this has to be recalculated even if we reschedule to
- 	 * the same process) Currently this is only used on SMP,
-	 * and it's approximate, so we do not have to maintain
-	 * it while holding the runqueue spinlock.
- 	 */
- 	sched_data->last_schedule = get_cycles();
-
-	/*
-	 * We drop the scheduler lock early (it's a global spinlock),
-	 * thus we have to lock the previous process from getting
-	 * rescheduled during switch_to().
-	 */
-
-#endif /* CONFIG_SMP */
-
-	kstat.context_swtch++;
-	/*
-	 * there are 3 processes which are affected by a context switch:
-	 *
-	 * prev == .... ==> (last => next)
-	 *
-	 * It's the 'much more previous' 'prev' that is on next's stack,
-	 * but prev is set to (the just run) 'last' process by switch_to().
-	 * This might sound slightly confusing but makes tons of sense.
-	 */
-	prepare_to_switch();
-	{
-		struct mm_struct *mm = next->mm;
-		struct mm_struct *oldmm = prev->active_mm;
-		if (!mm) {
-			BUG_ON(next->active_mm);
-			next->active_mm = oldmm;
-			atomic_inc(&oldmm->mm_count);
-			enter_lazy_tlb(oldmm, next, this_cpu);
-		} else {
-			BUG_ON(next->active_mm != mm);
-			switch_mm(oldmm, mm, next, this_cpu);
-		}
-
-		if (!prev->mm) {
-			prev->active_mm = NULL;
-			mmdrop(oldmm);
-		}
-	}
-
-	/*
-	 * This just switches the register state and the
-	 * stack.
-	 */
-	switch_to(prev, next, prev);
-	__schedule_tail(prev);
-
-same_process:
 	reacquire_kernel_lock(current);
-	if (current->need_resched)
+	if (unlikely(current->need_resched))
 		goto need_resched_back;
 	return;
 }
