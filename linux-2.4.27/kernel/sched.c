@@ -49,7 +49,7 @@ int sched_find_first_zero_bit(unsigned long *bitmap) {
 /* end util funcs 	   */
 
 #define MAX_PRIO 256
-#define BITMAP_SIZE ((MAX_PRIO+7)/8)
+#define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
 
 
 #define this_rq()	(current->queue) // (runqueues + smp_processor_id())
@@ -69,7 +69,7 @@ struct runqueue {
 	task_t *curr, *idle, *next;
 	prio_array_t *active, *expired; // , arrays[2]; // why two arrays in runque?
 	char __pad [SMP_CACHE_BYTES];
-} runqueues;
+};
 
 struct prio_array {
 	int nr_active;                // /* number of tasks */ 
