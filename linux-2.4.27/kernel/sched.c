@@ -43,21 +43,38 @@ extern void immediate_bh(void);
 #define MAX_PRIO 256
 #define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
 
+/* TIME SLICES for queues */
+
+/*
+* These are the 'tuning knobs' of the scheduler:
+*
+* Minimum timeslice is 10 msecs, default timeslice is 100 msecs,
+* maximum timeslice is 200 msecs. Timeslices get refilled after
+* they expire.
+*/
+#define MIN_TIMESLICE           ( 10 * HZ / 1000)
+#define MAX_TIMESLICE           (200 * HZ / 1000)
+#define ON_RUNQUEUE_WEIGHT       30
+#define CHILD_PENALTY            95
+#define PARENT_PENALTY          100
+#define EXIT_WEIGHT               3
+#define PRIO_BONUS_RATIO         25
+#define MAX_BONUS               (MAX_USER_PRIO * PRIO_BONUS_RATIO / 100)
+#define INTERACTIVE_DELTA         2
+#define MAX_SLEEP_AVG           (AVG_TIMESLICE * MAX_BONUS)
+#define STARVATION_LIMIT        (MAX_SLEEP_AVG)
+#define NS_MAX_SLEEP_AVG        0 // this macro needs JIFFIES_TO_NS (JIFFIES_TO_NS(MAX_SLEEP_AVG))
+#define NODE_THRESHOLD          125
+#define CREDIT_LIMIT            100 
+
+/*			  */
+
+
 // we need to define this function, using maybe 2.6 bitops.h implementation or alike
 int sched_find_first_zero_bit(unsigned long *bitmap) {
 	// TODO - definition here ... let's just use the arch specific
 	return 0;
 }
-
-/* We will prime the priority queues here */
-int prime_prio_queues(prio_array_t *array) {
-	int i;
-	for(i = 0; i < MAX_PRIO; i++) {
-		// init each queue here
-	}
-	return 1;
-}
-
 
 /* end util funcs 	   */
 
@@ -74,6 +91,8 @@ int prime_prio_queues(prio_array_t *array) {
 
 struct runqueue {
 	int cpu;
+	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
+	struct list_head *queue;
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
 	task_t *curr, *idle, *next;
@@ -82,13 +101,42 @@ struct runqueue {
 };
 
 struct prio_array {
-	int nr_active;                // /* number of tasks */ 
+	int nr_active;                		// /* number of tasks */ 
 	spinlock_t *lock;
 	runqueue_t *rq;				// current active queue
 	unsigned long bitmap[BITMAP_SIZE];        /* priority bitmap */
 	struct runqueue queue[MAX_PRIO];	// an array of 256 queues
-	// struct list_head queue[MAX_PRIO];
+	struct list_head queues[MAX_PRIO];	// a list of 256 queues
 } pq_array;
+
+
+/* Utility functions (always after defintions)  */
+
+
+
+/* We will prime the priority queues here */
+int prime_prio_queues(prio_array_t *array) {
+	int i;
+	for(i = 0; i < MAX_PRIO; i++) {
+		
+		// get the current queue
+		runqueue_t *rq = array->queue + i;
+		
+		/* initializing head of queue for runqueue
+		   each queue has a main job which provides
+		   the head of the queue's list
+		   We might or might not use this
+		*/
+		task_t *head_job = rq->jobs_queue;
+		INIT_LIST_HEAD(&head_job->queue_head);
+		rq->queue = &(head_job->queue_head);
+		
+	}
+	return 1;
+}
+
+
+/*			end			*/
 
 /*
  * scheduler variables

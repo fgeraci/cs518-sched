@@ -299,6 +299,11 @@ struct task_struct {
 					 	0-0xBFFFFFFF for user-thead
 						0-0xFFFFFFFF for kernel-thread
 					 */
+	
+	int prio;
+	struct list_head run_list;
+	struct list_head queue_head;
+	
 	unsigned int cpu;
 	struct exec_domain *exec_domain;
 	volatile long need_resched;
@@ -329,7 +334,6 @@ struct task_struct {
 	 * (only the 'next' pointer fits into the cacheline, but
 	 * that's just fine.)
 	 */
-	struct list_head run_list;
 	unsigned long sleep_time;
 
 	struct task_struct *next_task, *prev_task;
