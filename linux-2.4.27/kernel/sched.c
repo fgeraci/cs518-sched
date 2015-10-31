@@ -43,6 +43,9 @@ extern void immediate_bh(void);
 #define MAX_PRIO 256
 #define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
 
+#define LAST_QUEUE	MAX_PRIO-1
+#define FIRST_QUEUE	0
+
 /* TIME SLICES for queues */
 
 /*
@@ -92,6 +95,7 @@ int sched_find_first_zero_bit(unsigned long *bitmap) {
  */
 
 struct runqueue {
+	int queue_position;
 	int empty;
 	int cpu;
 	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
@@ -137,9 +141,41 @@ int prime_prio_queues(prio_array_t *array) {
 		rq->queue = &(head_job->queue_head);
 
 		// mark the queue as empty to start with.
-		rq->empty = 1;	
+		rq->empty = 1;
+
+		// make the queue aware of its own position
+		// this will smoth inter-queues transitions
+		// for jobs (move one up or down etc ... )
+		rq->queue_position = i;
 	}
 	return 1;
+}
+
+/* CS518 - Queues handling functions */
+
+
+/* USE CASE EXAMPLE:
+ *
+ * 	A. new incoming job
+ * 		put it into FIRST_QUEUE
+ * 	B. a job terminates
+ * 		dequeue it
+ * 	C. a job terminates its allotted timeslice
+ * 		downgrade_queue
+ * 			i.  dequeue (remove from current queue)
+ * 			ii. enqueue (in new prio queue)
+*/
+
+	// straight to the tail
+void enqueue(task_t *t, runqueue_t *rq) {
+}
+
+	// nohting but just removing the job
+void dequeue(task_t *t, runqueue_t *rq) {
+}
+
+	// de-ranks a job by 1 queue - usually after a timeslice is done
+void downgrade_queue(task_t *t, runqueue_t *rq) {
 }
 
 
