@@ -4110,7 +4110,7 @@ kernel_version:	.ascii	"2.4.27-ak1312-fgeraci"
 		.ascii	"@"
 		.ascii	"osvm"
 		.ascii	") "
-		.ascii	"#44 Sat Oct 31 17:08:23 EDT 2015"
+		.ascii	"#45 Sat Oct 31 17:39:20 EDT 2015"
 		.byte	0
 
 # This is the default real mode switch routine.

@@ -67,6 +67,8 @@ extern void immediate_bh(void);
 #define NODE_THRESHOLD          125
 #define CREDIT_LIMIT            100 
 
+#define LINEAR_PRIORITY(idx)	(38*(idx+1)+472)/51
+
 /*			  */
 
 
@@ -90,6 +92,7 @@ int sched_find_first_zero_bit(unsigned long *bitmap) {
  */
 
 struct runqueue {
+	int empty;
 	int cpu;
 	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
 	struct list_head *queue;
@@ -125,12 +128,16 @@ int prime_prio_queues(prio_array_t *array) {
 		/* initializing head of queue for runqueue
 		   each queue has a main job which provides
 		   the head of the queue's list
-		   We might or might not use this
+		   Effectively, the FIRST availabel job in the queue
+		   is rq->queue->next and not queue itself, which is nothing
+		   but an empty job. Not elegant, I KNOW.
 		*/
 		task_t *head_job = rq->jobs_queue;
 		INIT_LIST_HEAD(&head_job->queue_head);
 		rq->queue = &(head_job->queue_head);
-		
+
+		// mark the queue as empty to start with.
+		rq->empty = 1;	
 	}
 	return 1;
 }
