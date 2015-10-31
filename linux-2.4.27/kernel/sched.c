@@ -39,17 +39,27 @@ extern void immediate_bh(void);
 
 /* CS518 - Utils functions */
 
+
+#define MAX_PRIO 256
+#define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
+
 // we need to define this function, using maybe 2.6 bitops.h implementation or alike
 int sched_find_first_zero_bit(unsigned long *bitmap) {
 	// TODO - definition here ... let's just use the arch specific
 	return 0;
 }
 
+/* We will prime the priority queues here */
+int prime_prio_queues(prio_array_t *array) {
+	int i;
+	for(i = 0; i < MAX_PRIO; i++) {
+		// init each queue here
+	}
+	return 1;
+}
+
 
 /* end util funcs 	   */
-
-#define MAX_PRIO 256
-#define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
 
 
 #define this_rq()	(current->queue) // (runqueues + smp_processor_id())
@@ -78,7 +88,7 @@ struct prio_array {
 	unsigned long bitmap[BITMAP_SIZE];        /* priority bitmap */
 	struct runqueue queue[MAX_PRIO];	// an array of 256 queues
 	// struct list_head queue[MAX_PRIO];
-} array;
+} pq_array;
 
 /*
  * scheduler variables
@@ -623,9 +633,9 @@ asmlinkage void schedule_tail(struct task_struct *prev)
 asmlinkage void schedule(void)
 {
 	struct schedule_data * sched_data;
-	prio_array_t *array;
+	prio_array_t *array = &pq_array;	// pq_array is the global str
 	runqueue_t *rq, *queue;
-	struct task_struct *prev, *next;// , *p; unused
+	struct task_struct *prev, *next;	// , *p; unused
 	// struct list_head *tmp; unused
 	int this_cpu; //, c; unused
 	int idx;
@@ -1380,6 +1390,11 @@ void __init sched_init(void)
 	for(nr = 0; nr < PIDHASH_SZ; nr++)
 		pidhash[nr] = NULL;
 
+	/* we prime all the priority queues here */
+	if(!(prime_prio_queues(&pq_array))) {
+		// priority queues failed to be initialized
+	}
+	
 	init_timervecs();
 
 	init_bh(TIMER_BH, timer_bh);
