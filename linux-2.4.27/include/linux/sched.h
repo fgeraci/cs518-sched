@@ -301,8 +301,8 @@ struct task_struct {
 					 */
 	
 	int prio;
-	struct list_head run_list;
-	struct list_head queue_head;
+	list_t run_list;
+	list_t queue_head;
 	int scheduled;		// 0 --> task just arrived
 	
 	unsigned int cpu;

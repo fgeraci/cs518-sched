@@ -41,7 +41,7 @@ extern void immediate_bh(void);
 
 
 #define MAX_PRIO 256
-#define BITMAP_SIZE 	((((MAX_PRIO+8)/8)+sizeof(long)-1)/sizeof(long)) // instead of using arch bitops.h we will do this in a more rudimentary way
+#define BITMAP_SIZE 	((MAX_PRIO/(8*sizeof(long)))+1) // instead of using arch bitops.h we will do this in a more rudimentary way
 
 #define LAST_QUEUE	MAX_PRIO-1
 #define FIRST_QUEUE	0
@@ -76,15 +76,47 @@ extern void immediate_bh(void);
 
 
 // we need to define this function, using maybe 2.6 bitops.h implementation or alike
-int sched_find_first_zero_bit(unsigned long *bitmap) {
-	// TODO - definition here ... let's just use the arch specific
-	return 0;
+static inline int sched_find_first_zero_bit(unsigned long arr[]) {
+	int size=sizeof(arr)/sizeof(long);
+		// TODO - definition here ... let's just use the arch specific
+	int last=-1,i = 0;
+	long m=1;
+	for(int j=0;j<size;j++)
+		{
+		for (i = 0,m=1; i < 8*sizeof(long); ++i) {  // assuming a 32 bit int
+			int b = arr[j] & m ? 1 : 0;
+			m<<=1;
+			if(b==1)
+			last=i;
+		}
+		if(last!=-1)
+		return ((j)*8*sizeof(long))+(8*sizeof(long))-last;
+
+	}
+		return -1;
 }
 
 /* end util funcs 	   */
 
 
-#define this_rq()	(current->queue) // (runqueues + smp_processor_id())
+#define this_rq()	(runqueues + 0)
+#define task_rq(p)		(runqueues + 0)
+#define cpu_rq(cpu)		(runqueues + 0)
+#define cpu_curr(cpu)		(runqueues[(1)].curr)
+#define rt_task(p)		((p)->policy != SCHED_OTHER)
+#define lock_task_rq(rq,p,flags)				\
+do {								\
+repeat_lock_task:						\
+	rq = task_rq(p);					\
+	spin_lock_irqsave(&rq->lock, flags);			\
+	if (unlikely((rq)->cpu != (p)->cpu)) {			\
+		spin_unlock_irqrestore(&rq->lock, flags);	\
+		goto repeat_lock_task;				\
+	}							\
+} while (0)
+
+#define unlock_task_rq(rq,p,flags)				\
+	spin_unlock_irqrestore(&rq->lock, flags)
 
 /*
  * This is the main, per-CPU runqueue data structure.
@@ -99,20 +131,19 @@ struct runqueue {
 	int empty;
 	int cpu;
 	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
-	struct list_head *queue;
+	list_t *queue;
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
 	task_t *curr, *idle, *next;
-	prio_array_t *active, *expired; // , arrays[2]; // why two arrays in runque?
+	prio_array_t *active,arrays[1]; // we only consider active arrays
 	char __pad [SMP_CACHE_BYTES];
-};
+}runqueues[NR_CPUS];
 
 struct prio_array {
 	int nr_active;                		// /* number of tasks */ 
 	spinlock_t *lock;
 	runqueue_t *rq;				// current active queue
 	unsigned long bitmap[BITMAP_SIZE];        /* priority bitmap */
-	struct runqueue queue[MAX_PRIO];	// an array of 256 queues
 	struct list_head queues[MAX_PRIO];	// a list of 256 queues
 } pq_array;
 
@@ -725,9 +756,9 @@ asmlinkage void schedule(void)
 {
 	struct schedule_data * sched_data;
 	prio_array_t *array = &pq_array;	// pq_array is the global str
-	runqueue_t *rq, *queue;
+	runqueue_t *rq;
 	struct task_struct *prev, *next;	// , *p; unused
-	// struct list_head *tmp; unused
+	list_t *queue; 
 	int this_cpu; //, c; unused
 	int idx;
 
