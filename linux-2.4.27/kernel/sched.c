@@ -135,8 +135,8 @@ struct runqueue {
 	list_t *queue;
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
-	task_t *curr, *idle, *next;
-	prio_array_t *active; //,arrays[1]; // we only consider active arrays
+	task_t *curr, *idle, *next, *tail, *head;
+	prio_array_t *active; // , arrays[1]; // we only consider active arrays
 	char __pad [SMP_CACHE_BYTES];
 }runqueues[NR_CPUS];
 
@@ -152,7 +152,11 @@ struct prio_array {
 
 /* Utility functions (always after defintions)  */
 
-
+void enqueue(task_t *t, runqueue_t *rq);
+void dequeue(task_t *t, runqueue_t *rq);
+void dequeue_all(task_t *t);
+void downgrade_queue(task_t *t, runqueue_t *rq);
+int is_queue_empty(runqueue_t *rq);
 
 /* We will prime the priority queues here */
 int prime_prio_queues(prio_array_t *array) {
@@ -201,16 +205,49 @@ int prime_prio_queues(prio_array_t *array) {
 
 	// straight to the tail
 void enqueue(task_t *t, runqueue_t *rq) {
+	/*
+	dequeue_all(t);
+	if(is_queue_empty(rq)) {
+		INIT_LIST_HEAD(&t->run_list);	
+	}
+	*/
 }
 
 	// nohting but just removing the job
 void dequeue(task_t *t, runqueue_t *rq) {
+	// t->run_list->prev = NULL and so next
+}
+
+void dequeue_all(task_t *t) {
+	/*
+	list_t *list = t->run_list;
+	
+	// set all links
+	if(list->prev) {
+		list->prev->run_list->next = NULL; // assuming #define NULL 0 or ((void*)0)
+	}
+	list->prev = NULL;
+	list->next = NULL;
+	
+	// disassociate it with queue
+	t->queue = NULL;
+	*/
 }
 
 	// de-ranks a job by 1 queue - usually after a timeslice is done
 void downgrade_queue(task_t *t, runqueue_t *rq) {
+	// remove job from current queue (make sure both !->prev and !->next
+	// add it as tail of next queue *rq->tail = job
 }
 
+int is_queue_empty(struct runqueue *rq) {
+	/*
+	int val = 0;
+	if(!rq->head)
+		val = 1;
+	return val;
+	*/
+}
 
 /*			end			*/
 
