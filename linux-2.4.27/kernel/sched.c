@@ -81,7 +81,8 @@ static inline int sched_find_first_zero_bit(unsigned long arr[]) {
 		// TODO - definition here ... let's just use the arch specific
 	int last=-1,i = 0;
 	long m=1;
-	for(int j=0;j<size;j++)
+	int j;
+	for(j=0;j<size;j++)
 		{
 		for (i = 0,m=1; i < 8*sizeof(long); ++i) {  // assuming a 32 bit int
 			int b = arr[j] & m ? 1 : 0;
@@ -135,7 +136,7 @@ struct runqueue {
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
 	task_t *curr, *idle, *next;
-	prio_array_t *active,arrays[1]; // we only consider active arrays
+	prio_array_t *active; //,arrays[1]; // we only consider active arrays
 	char __pad [SMP_CACHE_BYTES];
 }runqueues[NR_CPUS];
 
@@ -144,6 +145,7 @@ struct prio_array {
 	spinlock_t *lock;
 	runqueue_t *rq;				// current active queue
 	unsigned long bitmap[BITMAP_SIZE];        /* priority bitmap */
+	struct runqueue queue[MAX_PRIO];	// we will need all the queues
 	struct list_head queues[MAX_PRIO];	// a list of 256 queues
 } pq_array;
 
@@ -281,7 +283,7 @@ static union {
 	char __pad [SMP_CACHE_BYTES];
 } aligned_data [NR_CPUS] __cacheline_aligned = { {{&init_task,0}}};
 
-#define cpu_curr(cpu) aligned_data[(cpu)].schedule_data.curr
+// #define cpu_curr(cpu) aligned_data[(cpu)].schedule_data.curr
 #define last_schedule(cpu) aligned_data[(cpu)].schedule_data.last_schedule
 
 struct kernel_stat kstat;
@@ -758,7 +760,8 @@ asmlinkage void schedule(void)
 	prio_array_t *array = &pq_array;	// pq_array is the global str
 	runqueue_t *rq;
 	struct task_struct *prev, *next;	// , *p; unused
-	list_t *queue; 
+	// list_t *queue; 
+	runqueue_t *queue;
 	int this_cpu; //, c; unused
 	int idx;
 
