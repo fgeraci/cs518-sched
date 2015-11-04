@@ -226,14 +226,25 @@ void dequeue(task_t *t, runqueue_t *rq) {
 
 void dequeue_all(task_t *t) {
 	
-	// basic assuming linear linking.
-	// just remove all references
+	// get all references	
+	list_t *curr = &t->run_list;
+	list_t *prev = curr->prev;
+	list_t *next = curr->next;
 	
-	list_t curr = t->run_list;
-	curr.next = NULL;
-	curr.prev = NULL;
+	// delink from target
+	curr->next = NULL;
+	curr->prev = NULL;
 
-	// this does not ensure OTHER tasks not pointing to it.
+	// make sure chain's not broken
+	if(prev) {
+		if(next) {
+			prev->next = next; // rare - removing item from in-between items
+			next->prev = prev;
+		} else {
+			prev->next = NULL;
+		}
+		
+	}
 }
 
 	// de-ranks a job by 1 queue - usually after a timeslice is done
