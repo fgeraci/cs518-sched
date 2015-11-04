@@ -131,6 +131,7 @@ struct runqueue {
 	int queue_position;
 	int empty;
 	int cpu;
+	int priority;
 	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
 	// list_t *queue; - not needed - we don't want to link queues, but tasks
 	spinlock_t lock;
@@ -187,6 +188,7 @@ int prime_prio_queues(prio_array_t *array) {
 		// this will smoth inter-queues transitions
 		// for jobs (move one up or down etc ... )
 		rq->queue_position = i;
+		rq->priority = LINEAR_PRIORITY(i);
 	}
 	return 1;
 }
@@ -227,9 +229,23 @@ void enqueue(task_t *t, runqueue_t *rq) {
 	rq->tail = t;	
 }
 
-	// nohting but just removing the job
+	// nohting but just removing the job - remove head, make head next if available
 void dequeue(task_t *t, runqueue_t *rq) {
-	// t->run_list->prev = NULL and so next
+	// if t is not tail, then t->next is the next head
+	if(rq->tail == t) {
+		rq->head = NULL;
+		rq->tail = NULL;
+	} else {
+		// WTF! - ge the next elementi
+		list_t *l = &t->run_list;
+		task_t *next = list_entry(l->next, task_t, run_list);
+		rq->head = next;
+		// check if tail and ehad are the same
+		if(next == rq->tail) {
+			rq->tail = next;
+		}
+	}
+	dequeue_all(t);
 }
 
 void dequeue_all(task_t *t) {
@@ -259,6 +275,18 @@ void dequeue_all(task_t *t) {
 void downgrade_queue(task_t *t, runqueue_t *rq) {
 	// remove job from current queue (make sure both !->prev and !->next
 	// add it as tail of next queue *rq->tail = job
+	// pq_array.queue
+	runqueue_t *curr = t->queue;
+	runqueue_t *next; 
+	if(curr->queue_position == LAST_QUEUE) {
+		// can't downgrade anymore - re set it in the queue as tail
+		next = curr;
+	} else {
+		next = &pq_array.queue[1+ (curr->queue_position)];
+	}
+	dequeue(t,curr);
+	enqueue(t,next);
+	
 }
 
 int is_queue_empty(struct runqueue *rq) {
