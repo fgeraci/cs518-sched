@@ -854,6 +854,13 @@ asmlinkage void schedule(void)
 	spin_lock_prefetch(&runqueue_lock);
 
 	BUG_ON(!current->active_mm);
+	
+first_time_task:
+	
+	if(current->scheduled) {
+			enqueue(current,pq_&array[FIRST_QUEUE]);
+	}
+	
 need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
@@ -894,6 +901,7 @@ need_resched_back:
 	idx = sched_find_first_zero_bit(array->bitmap);
 	queue = array->queue + idx;
 	next = list_entry(queue->next, task_t, run_list);
+	
 	/*
 	 * this is the scheduler proper:
 	 */
@@ -1604,7 +1612,8 @@ void __init sched_init(void)
 	if(!(prime_prio_queues(&pq_array))) {
 		// priority queues failed to be initialized
 	}
-	
+		
+	enqueue(&init_task, &pq_array[FIRST_QUEUE])
 	init_timervecs();
 
 	init_bh(TIMER_BH, timer_bh);
