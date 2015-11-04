@@ -132,7 +132,7 @@ struct runqueue {
 	int empty;
 	int cpu;
 	task_t *jobs_queue;	// task_t is the head of the runlist of each queue
-	list_t *queue;
+	// list_t *queue; - not needed - we don't want to link queues, but tasks
 	spinlock_t lock;
 	unsigned long nr_running, nr_switches;
 	task_t *curr, *idle, *next, *tail, *head;
@@ -172,11 +172,14 @@ int prime_prio_queues(prio_array_t *array) {
 		   Effectively, the FIRST availabel job in the queue
 		   is rq->queue->next and not queue itself, which is nothing
 		   but an empty job. Not elegant, I KNOW.
-		*/
+		
 		task_t *head_job = rq->jobs_queue;
 		INIT_LIST_HEAD(&head_job->queue_head);
 		rq->queue = &(head_job->queue_head);
-
+		
+		We will actually leave the queue head/tail empty until the first task hits the queue
+		*/
+		
 		// mark the queue as empty to start with.
 		rq->empty = 1;
 
@@ -210,13 +213,18 @@ void enqueue(task_t *t, runqueue_t *rq) {
 	dequeue_all(t);
 	
 	// add it to tail of rq
-	task_t *tail = rq->tail;
 	if(is_queue_empty(rq)) {
 		INIT_LIST_HEAD(&t->run_list);
-		rq->head = t;
+		rq->head = t;	
+	} else {
+		task_t *curTail = rq->tail;
+		list_t *l = &curTail->run_list; // run_list is struct in task_struct
+		l->next = &t->run_list;
+		(&t->run_list)->prev = l;
 	}
-	tail = t;
-	// at this point, t points to itself and is assigned to queue as tail AND head if queue was empty
+	
+	// tail it baby
+	rq->tail = t;	
 }
 
 	// nohting but just removing the job
@@ -255,6 +263,7 @@ void downgrade_queue(task_t *t, runqueue_t *rq) {
 
 int is_queue_empty(struct runqueue *rq) {
 	int val = 0;
+	// if NULL ptr for head, queue is definitely empty
 	if(!rq->head)
 		val = 1;
 	return val;
