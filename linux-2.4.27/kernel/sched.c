@@ -205,12 +205,18 @@ int prime_prio_queues(prio_array_t *array) {
 
 	// straight to the tail
 void enqueue(task_t *t, runqueue_t *rq) {
-	/*
+	
+	// de-link task from all queues
 	dequeue_all(t);
+	
+	// add it to tail of rq
+	task_t *tail = rq->tail;
 	if(is_queue_empty(rq)) {
-		INIT_LIST_HEAD(&t->run_list);	
+		INIT_LIST_HEAD(&t->run_list);
+		rq->head = t;
 	}
-	*/
+	tail = t;
+	// at this point, t points to itself and is assigned to queue as tail AND head if queue was empty
 }
 
 	// nohting but just removing the job
@@ -219,19 +225,15 @@ void dequeue(task_t *t, runqueue_t *rq) {
 }
 
 void dequeue_all(task_t *t) {
-	/*
-	list_t *list = t->run_list;
 	
-	// set all links
-	if(list->prev) {
-		list->prev->run_list->next = NULL; // assuming #define NULL 0 or ((void*)0)
-	}
-	list->prev = NULL;
-	list->next = NULL;
+	// basic assuming linear linking.
+	// just remove all references
 	
-	// disassociate it with queue
-	t->queue = NULL;
-	*/
+	list_t curr = t->run_list;
+	curr.next = NULL;
+	curr.prev = NULL;
+
+	// this does not ensure OTHER tasks not pointing to it.
 }
 
 	// de-ranks a job by 1 queue - usually after a timeslice is done
@@ -241,12 +243,10 @@ void downgrade_queue(task_t *t, runqueue_t *rq) {
 }
 
 int is_queue_empty(struct runqueue *rq) {
-	/*
 	int val = 0;
 	if(!rq->head)
 		val = 1;
 	return val;
-	*/
 }
 
 /*			end			*/
